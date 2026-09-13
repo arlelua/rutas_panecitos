@@ -1,0 +1,9 @@
+{
+  "name":"GPS Rutas",
+  "short_name":"GPS Rutas",
+  "start_url":"./",
+  "display":"standalone",
+  "background_color":"#17202a",
+  "theme_color":"#17202a",
+  "icons":[]
+}
