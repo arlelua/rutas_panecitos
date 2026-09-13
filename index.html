@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GPS Rutas - V1</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#f4f4f4}
+#app{height:100%;display:flex;flex-direction:column}
+header{height:58px;background:#17202a;color:white;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:1000}
+header h1{font-size:18px;margin:0}
+#status{font-size:11px;color:#a9dfbf;text-align:right;max-width:150px}
+#map{flex:1;min-height:0}
+#panel{background:white;padding:9px;box-shadow:0 -3px 12px #0002;z-index:1001}
+.buttons{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+button{border:0;border-radius:9px;padding:12px 8px;font-size:14px;font-weight:bold;background:#e5e7e9;color:#17202a}
+button:active{transform:scale(.98)}
+.primary{background:#2471a3;color:white}.green{background:#239b56;color:white}
+.orange{background:#ca6f1e;color:white}.danger{background:#c0392b;color:white}
+.info{display:flex;justify-content:space-between;font-size:12px;margin-top:7px;color:#555}
+#routeName{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;margin-bottom:7px;font-size:14px}
+#pointsList{max-height:95px;overflow:auto;margin-top:7px;font-size:12px}
+.pointRow{display:flex;justify-content:space-between;padding:5px 2px;border-bottom:1px solid #eee}
+.leaflet-control-attribution{font-size:9px}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>📍 GPS Rutas V1</h1>
+  <div id="status">GPS detenido</div>
+</header>
+<div id="map"></div>
+<div id="panel">
+  <input id="routeName" value="Ruta 1" placeholder="Nombre de la ruta">
+  <div class="buttons">
+    <button class="primary" onclick="locate()">📍 Mi posición</button>
+    <button class="green" onclick="markPoint()">➕ Marcar punto</button>
+    <button class="orange" onclick="toggleRoute()">🛣️ Iniciar ruta</button>
+    <button onclick="finishRoute()">✅ Finalizar ruta</button>
+    <button onclick="clearCurrent()">🗑️ Limpiar ruta</button>
+    <button onclick="exportJSON()">📤 Exportar JSON</button>
+  </div>
+  <div class="info">
+    <span id="pointCount">Puntos: 0</span>
+    <span id="routeDistance">Distancia: 0 m</span>
+  </div>
+  <div id="pointsList"></div>
+</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([17.64,-101.55],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:20, attribution:'© OpenStreetMap'
+}).addTo(map);
+
+let currentPosition=null, gpsMarker=null, accuracyCircle=null;
+let currentPoints=[], currentLine=null, recording=false, totalDistance=0;
+let routes=JSON.parse(localStorage.getItem('gps_routes_v1')||'[]');
+
+function setStatus(text, ok=true){
+  const el=document.getElementById('status');
+  el.textContent=text; el.style.color=ok?'#a9dfbf':'#f5b7b1';
+}
+
+function locate(){
+  if(!navigator.geolocation){setStatus('GPS no disponible',false);return}
+  setStatus('Buscando GPS...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    updatePosition(pos);
+    map.setView([pos.coords.latitude,pos.coords.longitude],17);
+  },err=>{
+    setStatus('Error GPS: '+err.message,false);
+  },{enableHighAccuracy:true,timeout:15000,maximumAge:5000});
+}
+
+function updatePosition(pos){
+  const lat=pos.coords.latitude, lng=pos.coords.longitude;
+  currentPosition={lat,lng,accuracy:pos.coords.accuracy,time:new Date().toISOString()};
+  setStatus('GPS ±'+Math.round(pos.coords.accuracy)+' m');
+  if(gpsMarker) map.removeLayer(gpsMarker);
+  gpsMarker=L.marker([lat,lng],{title:'Mi posición'}).addTo(map).bindPopup('Mi posición<br>Precisión: ±'+Math.round(pos.coords.accuracy)+' m');
+  if(accuracyCircle) map.removeLayer(accuracyCircle);
+  accuracyCircle=L.circle([lat,lng],{radius:pos.coords.accuracy,fillOpacity:.08}).addTo(map);
+}
+
+function markPoint(){
+  if(!navigator.geolocation){alert('El dispositivo no permite GPS.');return}
+  setStatus('Obteniendo posición...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    updatePosition(pos);
+    const p={
+      id:currentPoints.length+1,
+      lat:pos.coords.latitude,lng:pos.coords.longitude,
+      accuracy:pos.coords.accuracy,
+      time:new Date().toISOString()
+    };
+    currentPoints.push(p);
+    L.marker([p.lat,p.lng]).addTo(map).bindPopup(
+      '<b>Punto '+p.id+'</b><br>Lat: '+p.lat.toFixed(6)+
+      '<br>Lng: '+p.lng.toFixed(6)+'<br>Precisión: ±'+Math.round(p.accuracy)+' m'
+    );
+    if(currentLine) map.removeLayer(currentLine);
+    if(currentPoints.length>1){
+      currentLine=L.polyline(currentPoints.map(x=>[x.lat,x.lng]),{weight:5}).addTo(map);
+      totalDistance=calculateDistance();
+    }
+    updateUI();
+    map.setView([p.lat,p.lng],17);
+    setStatus('Punto '+p.id+' marcado');
+  },err=>setStatus('No se pudo obtener GPS',false),
+  {enableHighAccuracy:true,timeout:15000,maximumAge:0});
+}
+
+function toggleRoute(){
+  recording=!recording;
+  const btn=document.querySelector('.orange');
+  if(recording){
+    btn.textContent='⏹️ Detener registro';
+    setStatus('Registro de ruta activo');
+    startWatch();
+  }else{
+    btn.textContent='🛣️ Iniciar ruta';
+    setStatus('Registro detenido');
+    stopWatch();
+  }
+}
+let watchId=null;
+function startWatch(){
+  if(watchId!==null)return;
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    updatePosition(pos);
+    if(!recording)return;
+    const last=currentPoints[currentPoints.length-1];
+    const d=last?distance(last.lat,last.lng,pos.coords.latitude,pos.coords.longitude):999;
+    if(d>=5){
+      const p={id:currentPoints.length+1,lat:pos.coords.latitude,lng:pos.coords.longitude,
+        accuracy:pos.coords.accuracy,time:new Date().toISOString()};
+      currentPoints.push(p);
+      redrawLine();
+      updateUI();
+    }
+  },err=>setStatus('Error en seguimiento GPS',false),
+  {enableHighAccuracy:true,timeout:20000,maximumAge:2000});
+}
+function stopWatch(){
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+}
+function redrawLine(){
+  if(currentLine)map.removeLayer(currentLine);
+  if(currentPoints.length>1){
+    currentLine=L.polyline(currentPoints.map(p=>[p.lat,p.lng]),{weight:5}).addTo(map);
+    totalDistance=calculateDistance();
+  }
+}
+function finishRoute(){
+  if(!currentPoints.length){alert('Primero marca al menos un punto.');return}
+  recording=false;stopWatch();
+  document.querySelector('.orange').textContent='🛣️ Iniciar ruta';
+  const name=document.getElementById('routeName').value.trim()||('Ruta '+(routes.length+1));
+  routes.push({name,createdAt:new Date().toISOString(),points:[...currentPoints],distance:calculateDistance()});
+  localStorage.setItem('gps_routes_v1',JSON.stringify(routes));
+  alert('Ruta guardada: '+name+'\\nPuntos: '+currentPoints.length+'\\nDistancia: '+formatDistance(calculateDistance()));
+  setStatus('Ruta guardada');
+}
+function clearCurrent(){
+  if(!confirm('¿Limpiar los puntos de la ruta actual?'))return;
+  currentPoints=[];totalDistance=0;
+  if(currentLine)map.removeLayer(currentLine);
+  currentLine=null;
+  document.getElementById('pointsList').innerHTML='';
+  updateUI();
+  setStatus('Ruta actual limpia');
+}
+function calculateDistance(){
+  let d=0;
+  for(let i=1;i<currentPoints.length;i++)
+    d+=distance(currentPoints[i-1].lat,currentPoints[i-1].lng,currentPoints[i].lat,currentPoints[i].lng);
+  return d;
+}
+function distance(lat1,lon1,lat2,lon2){
+  const R=6371000,rad=Math.PI/180;
+  const a=Math.sin((lat2-lat1)*rad/2)**2+
+    Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin((lon2-lon1)*rad/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function formatDistance(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(2)+' km'}
+function updateUI(){
+  document.getElementById('pointCount').textContent='Puntos: '+currentPoints.length;
+  document.getElementById('routeDistance').textContent='Distancia: '+formatDistance(calculateDistance());
+  document.getElementById('pointsList').innerHTML=currentPoints.map(p=>
+    `<div class="pointRow"><span>📍 P${p.id} — ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</span><span>±${Math.round(p.accuracy)}m</span></div>`
+  ).join('');
+}
+function exportJSON(){
+  const data={app:'GPS Rutas V1',exportedAt:new Date().toISOString(),routes};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='gps_rutas_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
