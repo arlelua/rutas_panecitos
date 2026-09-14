@@ -2,174 +2,229 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#17202a">
-<title>GPS Rutas V2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GPS Rutas V2 Mejorada</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#f4f6f7}
-#app{height:100%;display:flex;flex-direction:column}
-header{height:58px;background:#17202a;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:1000}
-header h1{font-size:18px;margin:0}#status{font-size:11px;color:#a9dfbf;text-align:right}
-#map{flex:1;min-height:0}
-#panel{background:#fff;padding:8px;box-shadow:0 -3px 12px #0002;z-index:1001;max-height:48vh;overflow:auto}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}
-input,textarea,select{width:100%;padding:10px;border:1px solid #ccd1d1;border-radius:8px;font-size:14px;background:#fff}
-textarea{resize:none;height:52px}
-button{border:0;border-radius:9px;padding:11px 7px;font-size:13px;font-weight:bold;background:#e5e7e9;color:#17202a}
-.primary{background:#2471a3;color:#fff}.green{background:#239b56;color:#fff}.orange{background:#ca6f1e;color:#fff}.danger{background:#c0392b;color:#fff}.dark{background:#34495e;color:#fff}
-.stats{display:flex;justify-content:space-between;font-size:12px;color:#555;padding:4px 2px}
-#pointsList{max-height:100px;overflow:auto;margin-top:5px}
-.point{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee;padding:6px 2px;font-size:12px}
-.point button{padding:5px 7px;font-size:11px}
-#routesPanel{display:none;padding:7px;background:#f8f9f9;border-radius:8px;margin-top:7px}
-.route{padding:8px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;gap:5px;font-size:12px}
-.route button{padding:6px}
-.leaflet-control-attribution{font-size:8px}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f6f8;color:#1f2937}
+header{background:#111827;color:#fff;padding:12px 14px;text-align:center;font-size:20px;font-weight:bold}
+#map{height:52vh;min-height:360px;width:100%}
+.panel{padding:10px;display:grid;gap:8px}
+input,textarea,select,button{font:inherit;border-radius:8px;border:1px solid #cbd5e1}
+input,textarea,select{padding:10px;background:#fff;width:100%}
+textarea{min-height:70px;resize:vertical}
+button{padding:11px 8px;background:#fff;font-weight:bold;cursor:pointer}
+button:active{transform:scale(.98)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.primary{background:#2563eb;color:#fff;border-color:#2563eb}.success{background:#16a34a;color:#fff;border-color:#16a34a}
+.danger{background:#dc2626;color:#fff;border-color:#dc2626}.dark{background:#374151;color:#fff;border-color:#374151}
+.status{padding:9px;border-radius:8px;background:#e5e7eb;font-size:14px}
+.status.recording{background:#fee2e2;color:#991b1b;font-weight:bold}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:#fff;padding:8px;text-align:center;border-radius:8px;font-size:12px}.stat b{display:block;font-size:16px}
+h3{margin:8px 0 4px}.route-card{background:#fff;padding:10px;border-radius:9px;margin-top:7px;border:1px solid #e5e7eb}
+.route-card button{margin:3px 2px;padding:7px;font-size:12px}
+.small{font-size:12px;color:#6b7280}
+.legend{background:#fff;padding:8px;border-radius:8px;font-size:12px}
 </style>
 </head>
 <body>
-<div id="app">
-<header><h1>📍 GPS Rutas V2</h1><div id="status">GPS detenido</div></header>
+<header>📍 GPS Rutas V2 — Trayectoria y puntos de interés</header>
+
 <div id="map"></div>
-<div id="panel">
-  <div class="row">
-    <input id="routeName" value="Ruta 1" placeholder="Nombre de la ruta">
-    <button class="dark" onclick="toggleRoutes()">📁 Rutas guardadas</button>
+
+<div class="panel">
+  <input id="routeName" placeholder="Nombre del recorrido" value="Ruta 1">
+  <textarea id="routeNotes" placeholder="Notas generales del recorrido"></textarea>
+
+  <div id="status" class="status">⚪ GPS detenido</div>
+
+  <div class="stats">
+    <div class="stat"><b id="trackCount">0</b>trayectoria</div>
+    <div class="stat"><b id="interestCount">0</b>puntos de interés</div>
+    <div class="stat"><b id="distance">0 m</b>distancia</div>
   </div>
-  <div class="row">
+
+  <div class="grid">
     <button class="primary" onclick="locate()">📍 Mi posición</button>
-    <button class="green" onclick="markGPSPoint()">➕ Punto GPS</button>
-  </div>
-  <div class="row">
-    <button class="orange" onclick="toggleRecording()">▶ Grabar recorrido</button>
-    <button onclick="finishRoute()">💾 Guardar ruta</button>
-  </div>
-  <div class="row">
-    <button onclick="enableManual()">📌 Punto en mapa</button>
+    <button class="success" onclick="addInterestGPS()">📌 Punto de interés</button>
+    <button class="dark" id="recordBtn" onclick="toggleRecording()">▶ Grabar recorrido</button>
+    <button onclick="addInterestMap()">🗺️ Punto en mapa</button>
     <button onclick="clearCurrent()">🗑️ Limpiar actual</button>
-  </div>
-  <div class="row">
+    <button onclick="saveRoute()">💾 Guardar ruta</button>
     <button onclick="exportJSON()">📤 JSON</button>
     <button onclick="exportCSV()">📊 CSV</button>
   </div>
-  <div class="stats"><span id="pointCount">Puntos: 0</span><span id="routeDistance">Distancia: 0 m</span></div>
-  <textarea id="notes" placeholder="Observaciones de la ruta (opcional)"></textarea>
-  <div id="pointsList"></div>
-  <div id="routesPanel"></div>
+
+  <div class="legend">
+    <b>Cómo funciona:</b> al grabar, el GPS registra automáticamente la <b>trayectoria</b>.
+    Los puntos de interés se agregan solamente cuando tú los marcas. Así no se mezclan ambos tipos de información.
+  </div>
+
+  <h3>Rutas guardadas</h3>
+  <div id="savedRoutes"></div>
 </div>
-</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const map=L.map('map').setView([17.64,-101.55],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'© OpenStreetMap'}).addTo(map);
-let gpsMarker=null,accuracyCircle=null,currentLine=null,recording=false,watchId=null,manualMode=false;
-let currentPoints=[],routes=JSON.parse(localStorage.getItem('gps_routes_v2')||'[]');
-let totalDistance=0;
+const map=L.map('map').setView([17.65,-101.55],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
 
-function status(t,ok=true){let e=document.getElementById('status');e.textContent=t;e.style.color=ok?'#a9dfbf':'#f5b7b1'}
-function locate(){
- if(!navigator.geolocation)return status('GPS no disponible',false);
- status('Buscando GPS...');
- navigator.geolocation.getCurrentPosition(p=>updatePosition(p,true),e=>status('Error GPS: '+e.message,false),
- {enableHighAccuracy:true,timeout:15000,maximumAge:3000});
+let route={name:'Ruta 1',notes:'',track:[],interests:[],distance:0,createdAt:new Date().toISOString()};
+let recording=false,watchId=null,trackLine=null,interestMarkers=[],currentMarker=null;
+
+function setStatus(t,rec=false){
+  const el=document.getElementById('status'); el.textContent=t; el.className='status'+(rec?' recording':'');
 }
-function updatePosition(p,center=false){
- const lat=p.coords.latitude,lng=p.coords.longitude;
- if(gpsMarker)map.removeLayer(gpsMarker);
- gpsMarker=L.marker([lat,lng]).addTo(map).bindPopup('📍 Mi posición<br>Precisión ±'+Math.round(p.coords.accuracy)+' m');
- if(accuracyCircle)map.removeLayer(accuracyCircle);
- accuracyCircle=L.circle([lat,lng],{radius:p.coords.accuracy,fillOpacity:.08}).addTo(map);
- status('GPS ±'+Math.round(p.coords.accuracy)+' m');
- if(center)map.setView([lat,lng],17);
+function hav(a,b){
+  const R=6371000, p=Math.PI/180, dLat=(b.lat-a.lat)*p, dLon=(b.lng-a.lng)*p;
+  const x=Math.sin(dLat/2)**2+Math.cos(a.lat*p)*Math.cos(b.lat*p)*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
-function markGPSPoint(){
- if(!navigator.geolocation)return;
- status('Obteniendo posición...');
- navigator.geolocation.getCurrentPosition(p=>{
-   updatePosition(p,true);
-   addPoint(p.coords.latitude,p.coords.longitude,p.coords.accuracy,'GPS');
- },e=>status('No se pudo obtener GPS',false),{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+function updateStats(){
+  document.getElementById('trackCount').textContent=route.track.length;
+  document.getElementById('interestCount').textContent=route.interests.length;
+  document.getElementById('distance').textContent=route.distance<1000?route.distance.toFixed(0)+' m':(route.distance/1000).toFixed(2)+' km';
 }
-function addPoint(lat,lng,accuracy=0,type='Mapa'){
- const p={id:currentPoints.length+1,lat,lng,accuracy,type,time:new Date().toISOString()};
- currentPoints.push(p);
- L.marker([lat,lng]).addTo(map).bindPopup('<b>Punto '+p.id+'</b><br>'+type+'<br>'+lat.toFixed(6)+', '+lng.toFixed(6));
- redraw();updateUI();manualMode=false;
-}
-function enableManual(){
- manualMode=true;status('Toca el mapa para colocar un punto');
-}
-map.on('click',e=>{if(manualMode)addPoint(e.latlng.lat,e.latlng.lng,0,'Mapa')});
 function redraw(){
- if(currentLine)map.removeLayer(currentLine);
- if(currentPoints.length>1)currentLine=L.polyline(currentPoints.map(p=>[p.lat,p.lng]),{weight:5}).addTo(map);
- totalDistance=calcDistance();
+  if(trackLine) map.removeLayer(trackLine);
+  if(route.track.length) trackLine=L.polyline(route.track.map(p=>[p.lat,p.lng]),{weight:4}).addTo(map);
+  interestMarkers.forEach(m=>map.removeLayer(m)); interestMarkers=[];
+  route.interests.forEach(p=>{
+    const m=L.marker([p.lat,p.lng]).addTo(map).bindPopup(
+      '<b>Punto de interés P'+p.id+'</b><br>'+escapeHtml(p.category||'Sin categoría')+
+      '<br>'+escapeHtml(p.description||'Sin descripción')+
+      '<br><small>Precisión: '+(p.accuracy? p.accuracy.toFixed(1)+' m':'N/D')+'</small>'
+    );
+    interestMarkers.push(m);
+  });
+  updateStats();
 }
-function calcDistance(){let d=0;for(let i=1;i<currentPoints.length;i++)d+=dist(currentPoints[i-1],currentPoints[i]);return d}
-function dist(a,b){const R=6371000,rad=Math.PI/180,A=Math.sin((b.lat-a.lat)*rad/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin((b.lng-a.lng)*rad/2)**2;return 2*R*Math.asin(Math.sqrt(A))}
-function format(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(2)+' km'}
-function toggleRecording(){
- recording=!recording;
- const b=document.querySelector('.orange');
- if(recording){b.textContent='⏹️ Detener recorrido';status('Grabando recorrido');startWatch()}
- else{b.textContent='▶ Grabar recorrido';stopWatch();status('Recorrido detenido')}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+
+function addTrack(pos){
+  const p={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy||null,time:new Date().toISOString()};
+  const last=route.track[route.track.length-1];
+  if(last){
+    const d=hav(last,p);
+    // Conserva lecturas GPS como trayectoria, pero evita duplicados prácticamente idénticos.
+    if(d<1) return;
+    route.distance+=d;
+  }
+  route.track.push(p); redraw();
+  if(route.track.length===1) map.setView([p.lat,p.lng],16);
 }
-function startWatch(){
- if(watchId!==null)return;
- watchId=navigator.geolocation.watchPosition(p=>{
-   updatePosition(p,false);
-   const q={lat:p.coords.latitude,lng:p.coords.longitude};
-   const last=currentPoints[currentPoints.length-1];
-   if(!last || dist(last,q)>=5)addPoint(q.lat,q.lng,p.coords.accuracy,'Recorrido');
- },e=>status('Error en seguimiento GPS',false),{enableHighAccuracy:true,timeout:20000,maximumAge:2000});
+
+function startRecording(){
+  if(!navigator.geolocation){alert('Este dispositivo no permite geolocalización.');return}
+  recording=true; document.getElementById('recordBtn').textContent='⏹ Detener recorrido';
+  setStatus('🔴 Grabando trayectoria GPS…',true);
+  watchId=navigator.geolocation.watchPosition(addTrack,err=>{
+    setStatus('⚠️ Error GPS: '+err.message,true);
+  },{enableHighAccuracy:true,maximumAge:1000,timeout:10000});
 }
-function stopWatch(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}}
-function finishRoute(){
- if(!currentPoints.length)return alert('Primero agrega puntos.');
- stopWatch();recording=false;document.querySelector('.orange').textContent='▶ Grabar recorrido';
- const name=document.getElementById('routeName').value.trim()||('Ruta '+(routes.length+1));
- const r={id:Date.now(),name,createdAt:new Date().toISOString(),notes:document.getElementById('notes').value,points:[...currentPoints],distance:calcDistance()};
- routes.push(r);save();renderRoutes();status('Ruta guardada: '+name);
- alert('Ruta guardada\\n'+name+'\\nPuntos: '+r.points.length+'\\nDistancia: '+format(r.distance));
+function stopRecording(){
+  recording=false;
+  if(watchId!==null) navigator.geolocation.clearWatch(watchId);
+  watchId=null; document.getElementById('recordBtn').textContent='▶ Grabar recorrido';
+  setStatus('🟢 GPS listo — recorrido detenido');
 }
-function save(){localStorage.setItem('gps_routes_v2',JSON.stringify(routes))}
+function toggleRecording(){recording?stopRecording():startRecording()}
+
+function locate(){
+  if(!navigator.geolocation){alert('Geolocalización no disponible');return}
+  setStatus('🛰️ Buscando posición…');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const p=[pos.coords.latitude,pos.coords.longitude];
+    map.setView(p,17);
+    if(currentMarker) map.removeLayer(currentMarker);
+    currentMarker=L.circleMarker(p,{radius:8}).addTo(map)
+      .bindPopup('Mi posición<br>Precisión: '+(pos.coords.accuracy||0).toFixed(1)+' m').openPopup();
+    setStatus('🟢 Posición obtenida — precisión '+(pos.coords.accuracy||0).toFixed(1)+' m');
+  },err=>setStatus('⚠️ '+err.message),{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+}
+
+function makeInterest(lat,lng,accuracy=null){
+  const category=prompt('Categoría del punto (ej. cliente, tienda, panadería, cruce):','Punto de interés');
+  if(category===null)return;
+  const description=prompt('Descripción u observaciones:','');
+  if(description===null)return;
+  const p={id:route.interests.length+1,lat,lng,accuracy,category,description,time:new Date().toISOString()};
+  route.interests.push(p); redraw();
+  const m=interestMarkers[interestMarkers.length-1];
+  if(m) m.openPopup();
+}
+function addInterestGPS(){
+  if(!navigator.geolocation){alert('Geolocalización no disponible');return}
+  setStatus('🛰️ Obteniendo posición del punto…');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    makeInterest(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy||null);
+    map.setView([pos.coords.latitude,pos.coords.longitude],17);
+    setStatus('🟢 Punto de interés agregado');
+  },err=>setStatus('⚠️ '+err.message),{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+}
+function addInterestMap(){
+  setStatus('🗺️ Toca el mapa para colocar el punto');
+  const handler=e=>{
+    map.off('click',handler); makeInterest(e.latlng.lat,e.latlng.lng,null);
+    setStatus('🟢 Punto en mapa agregado');
+  };
+  map.on('click',handler);
+}
+
 function clearCurrent(){
- if(!confirm('¿Limpiar la ruta actual?'))return;
- currentPoints=[];if(currentLine)map.removeLayer(currentLine);currentLine=null;
- document.getElementById('notes').value='';updateUI();status('Ruta actual limpia');
+  if(!confirm('¿Limpiar el recorrido actual?'))return;
+  stopRecording(); route={name:'Ruta 1',notes:'',track:[],interests:[],distance:0,createdAt:new Date().toISOString()};
+  document.getElementById('routeName').value=route.name; document.getElementById('routeNotes').value='';
+  redraw(); setStatus('⚪ Recorrido nuevo');
 }
-function updateUI(){
- document.getElementById('pointCount').textContent='Puntos: '+currentPoints.length;
- document.getElementById('routeDistance').textContent='Distancia: '+format(calcDistance());
- document.getElementById('pointsList').innerHTML=currentPoints.map((p,i)=>
- `<div class="point"><span>📍 P${i+1} · ${p.type} · ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</span><button onclick="removePoint(${i})">✕</button></div>`).join('');
+function saveRoute(){
+  route.name=document.getElementById('routeName').value.trim()||'Ruta sin nombre';
+  route.notes=document.getElementById('routeNotes').value;
+  route.updatedAt=new Date().toISOString();
+  const saved=JSON.parse(localStorage.getItem('gps_routes_v2_mejorada')||'[]');
+  saved.push(JSON.parse(JSON.stringify(route)));
+  localStorage.setItem('gps_routes_v2_mejorada',JSON.stringify(saved));
+  renderSaved(); setStatus('💾 Ruta guardada correctamente');
 }
-function removePoint(i){currentPoints.splice(i,1);currentPoints.forEach((p,j)=>p.id=j+1);redraw();updateUI()}
-function toggleRoutes(){const p=document.getElementById('routesPanel');p.style.display=p.style.display==='none'?'block':'none';renderRoutes()}
-function renderRoutes(){
- const p=document.getElementById('routesPanel');
- p.innerHTML=routes.length?routes.slice().reverse().map(r=>
- `<div class="route"><span><b>${r.name}</b><br>${r.points.length} puntos · ${format(r.distance)}</span><span><button onclick="loadRoute(${r.id})">Abrir</button><button onclick="deleteRoute(${r.id})">✕</button></span></div>`).join(''):'<small>No hay rutas guardadas.</small>';
+function loadRoute(i){
+  const saved=JSON.parse(localStorage.getItem('gps_routes_v2_mejorada')||'[]');
+  route=JSON.parse(JSON.stringify(saved[i]));
+  document.getElementById('routeName').value=route.name;
+  document.getElementById('routeNotes').value=route.notes||'';
+  redraw();
+  const all=[...route.track.map(p=>[p.lat,p.lng]),...route.interests.map(p=>[p.lat,p.lng])];
+  if(all.length)map.fitBounds(all);
 }
-function loadRoute(id){
- const r=routes.find(x=>x.id===id);if(!r)return;
- currentPoints=JSON.parse(JSON.stringify(r.points));document.getElementById('routeName').value=r.name;document.getElementById('notes').value=r.notes||'';
- redraw();updateUI();if(currentPoints.length)map.fitBounds(currentPoints.map(p=>[p.lat,p.lng]),{padding:[20,20]});status('Ruta cargada: '+r.name)
+function deleteRoute(i){
+  if(!confirm('¿Eliminar esta ruta guardada?'))return;
+  const saved=JSON.parse(localStorage.getItem('gps_routes_v2_mejorada')||'[]');
+  saved.splice(i,1); localStorage.setItem('gps_routes_v2_mejorada',JSON.stringify(saved)); renderSaved();
 }
-function deleteRoute(id){if(!confirm('¿Eliminar esta ruta?'))return;routes=routes.filter(r=>r.id!==id);save();renderRoutes()}
+function renderSaved(){
+  const el=document.getElementById('savedRoutes'),saved=JSON.parse(localStorage.getItem('gps_routes_v2_mejorada')||'[]');
+  if(!saved.length){el.innerHTML='<div class="small">No hay rutas guardadas.</div>';return}
+  el.innerHTML=saved.map((r,i)=>`<div class="route-card">
+    <b>${escapeHtml(r.name)}</b><br>
+    <span class="small">${r.track.length} puntos de trayectoria · ${r.interests.length} puntos de interés · ${r.distance<1000?r.distance.toFixed(0)+' m':(r.distance/1000).toFixed(2)+' km'}</span><br>
+    <button onclick="loadRoute(${i})">Abrir</button>
+    <button onclick="deleteRoute(${i})" class="danger">Eliminar</button>
+  </div>`).join('');
+}
+function download(data,name,type){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
 function exportJSON(){
- const blob=new Blob([JSON.stringify({app:'GPS Rutas V2',exportedAt:new Date().toISOString(),routes},null,2)],{type:'application/json'});
- download(blob,'gps_rutas_v2.json')
+  const out=JSON.stringify(route,null,2);download(out,(route.name||'ruta')+'.json','application/json');
 }
 function exportCSV(){
- let rows=['ruta,punto,tipo,latitud,longitud,precision,fecha'];
- routes.forEach(r=>r.points.forEach((p,i)=>rows.push([csv(r.name),i+1,p.type,p.lat,p.lng,p.accuracy,p.time].join(','))));
- download(new Blob([rows.join('\\n')],{type:'text/csv;charset=utf-8'}),'gps_rutas_v2.csv')
+  const rows=[['tipo','id','lat','lng','precision_m','fecha_hora','categoria','descripcion']];
+  route.track.forEach((p,i)=>rows.push(['trayectoria',i+1,p.lat,p.lng,p.accuracy??'',p.time,'','']));
+  route.interests.forEach(p=>rows.push(['interes',p.id,p.lat,p.lng,p.accuracy??'',p.time,p.category,p.description]));
+  download(rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\\n'),(route.name||'ruta')+'.csv','text/csv;charset=utf-8');
 }
-function csv(s){return '"'+String(s||'').replaceAll('"','""')+'"'}
-function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
-renderRoutes();updateUI();
+renderSaved(); redraw();
 </script>
-</body></html>
+</body>
+</html>

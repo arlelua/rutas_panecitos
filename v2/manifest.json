@@ -1,9 +1,9 @@
 {
-  "name":"GPS Rutas",
-  "short_name":"GPS Rutas",
+  "name":"GPS Rutas V2 Mejorada",
+  "short_name":"GPS Rutas V2",
   "start_url":"./",
   "display":"standalone",
-  "background_color":"#17202a",
-  "theme_color":"#17202a",
+  "background_color":"#f4f6f8",
+  "theme_color":"#111827",
   "icons":[]
 }
