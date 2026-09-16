@@ -1,9 +1,1 @@
-{
-  "name":"GPS Rutas V2 Mejorada",
-  "short_name":"GPS Rutas V2",
-  "start_url":"./",
-  "display":"standalone",
-  "background_color":"#f4f6f8",
-  "theme_color":"#111827",
-  "icons":[]
-}
+{"name":"GPS Rutas V2.1","short_name":"GPS Rutas","start_url":"./index.html","display":"standalone","background_color":"#f3f4f6","theme_color":"#17202a","lang":"es"}

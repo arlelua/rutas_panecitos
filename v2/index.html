@@ -55,6 +55,8 @@ h3{margin:8px 0 4px}.route-card{background:#fff;padding:10px;border-radius:9px;m
     <button onclick="saveRoute()">💾 Guardar ruta</button>
     <button onclick="exportJSON()">📤 JSON</button>
     <button onclick="exportCSV()">📊 CSV</button>
+    <button onclick="backupRoutes()">🛡️ Respaldar rutas</button>
+    <button onclick="restoreRoutes()">♻️ Restaurar respaldo</button>
   </div>
 
   <div class="legend">
@@ -63,6 +65,7 @@ h3{margin:8px 0 4px}.route-card{background:#fff;padding:10px;border-radius:9px;m
   </div>
 
   <h3>Rutas guardadas</h3>
+  <div class="small">Tus rutas guardadas se mantienen en el almacenamiento del navegador. Al reemplazar este archivo HTML no se eliminan. Aun así, puedes crear un respaldo antes de actualizar.</div>
   <div id="savedRoutes"></div>
 </div>
 
@@ -217,6 +220,30 @@ function download(data,name,type){
 }
 function exportJSON(){
   const out=JSON.stringify(route,null,2);download(out,(route.name||'ruta')+'.json','application/json');
+}
+function backupRoutes(){
+  const saved=JSON.parse(localStorage.getItem('gps_routes_v2_mejorada')||'[]');
+  if(!saved.length){alert('No hay rutas guardadas para respaldar.');return;}
+  const backup={app:'GPS Rutas V2.2',exportedAt:new Date().toISOString(),routes:saved};
+  download(JSON.stringify(backup,null,2),'GPS_Rutas_RESPALDO_'+new Date().toISOString().slice(0,10)+'.json','application/json');
+  setStatus('🛡️ Respaldo creado: '+saved.length+' rutas.');
+}
+function restoreRoutes(){
+  const input=document.createElement('input'); input.type='file'; input.accept='.json,application/json';
+  input.onchange=()=>{const f=input.files[0]; if(!f)return; const r=new FileReader();
+    r.onload=()=>{try{
+      const data=JSON.parse(r.result); const incoming=Array.isArray(data.routes)?data.routes:(Array.isArray(data)?data:[]);
+      if(!incoming.length){alert('El respaldo no contiene rutas.');return;}
+      const current=JSON.parse(localStorage.getItem('gps_routes_v2_mejorada')||'[]');
+      const replace=confirm('¿Quieres REEMPLAZAR las rutas actuales por el respaldo?
+
+Aceptar = reemplazar
+Cancelar = conservar las actuales y agregar las del respaldo.');
+      const final=replace?incoming:current.concat(incoming);
+      localStorage.setItem('gps_routes_v2_mejorada',JSON.stringify(final)); renderSaved();
+      setStatus('♻️ Respaldo restaurado. Rutas disponibles: '+final.length+'.');
+    }catch(e){alert('No se pudo leer el respaldo JSON.');}}; r.readAsText(f);
+  }; input.click();
 }
 function exportCSV(){
   const rows=[['tipo','id','lat','lng','precision_m','fecha_hora','categoria','descripcion']];
