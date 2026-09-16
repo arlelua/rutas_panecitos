@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPS Puntos de Interés</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f3f4f6;color:#17202a}
+header{background:#17202a;color:#fff;padding:14px 16px}h1{margin:0;font-size:21px}header p{margin:4px 0 0;font-size:13px;opacity:.85}
+main{max-width:1100px;margin:auto;padding:12px}.panel{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}input,button{min-height:44px;font-size:16px;border-radius:8px}input{border:1px solid #bbb;padding:8px;flex:1;min-width:180px}button{border:0;padding:8px 13px;background:#26384a;color:#fff}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stat{background:#eef2f5;border-radius:9px;padding:10px;text-align:center}.stat b{display:block;font-size:21px}.stat span{font-size:12px}
+#map{height:65vh;min-height:430px;border-radius:10px}.status{font-size:13px;color:#445}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px;border-bottom:1px solid #ddd;text-align:left}tbody tr{cursor:pointer}tbody tr:hover{background:#f0f4f7}.tablewrap{overflow:auto;max-height:300px}
+@media(max-width:600px){#map{height:58vh;min-height:380px}h1{font-size:18px}}
+</style>
+</head>
+<body>
+<header><h1>📍 GPS — Puntos de Interés</h1><p>Visualización independiente de los puntos registrados</p></header>
+<main>
+<section class="panel">
+ <div class="row"><input id="file" type="file" accept=".json,application/json"><button id="load">📂 Cargar JSON</button><button id="fit">🔍 Ajustar</button></div>
+ <p id="status" class="status">Carga un JSON de GPS Rutas. Solo se mostrarán los puntos de interés.</p>
+</section>
+<section class="panel"><div class="stats"><div class="stat"><b id="n">0</b><span>puntos de interés</span></div><div class="stat"><b id="cats">0</b><span>categorías</span></div></div></section>
+<section class="panel"><div id="map"></div></section>
+<section class="panel"><h3>Listado de puntos</h3><div class="tablewrap"><table><thead><tr><th>ID</th><th>Categoría</th><th>Descripción</th><th>Latitud</th><th>Longitud</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map').setView([17.65,-101.55],11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
+const layer=L.layerGroup().addTo(map);let points=[],bounds=null;
+const $=id=>document.getElementById(id);
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function popup(p){return `<b>📍 ${esc(p.id||'Punto')}</b><br><b>Categoría:</b> ${esc(p.category||'—')}<br><b>Descripción:</b> ${esc(p.description||'—')}<br><small>Lat: ${p.lat}<br>Lng: ${p.lng}<br>Precisión: ${p.accuracy??'—'} m<br>${esc(p.time||'')}</small>`}
+function render(){
+ layer.clearLayers();$('rows').innerHTML='';
+ const cats=new Set();
+ points.forEach((p,i)=>{
+  cats.add(p.category||'Sin categoría');
+  const m=L.marker([p.lat,p.lng]).bindPopup(popup(p)).addTo(layer);
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td>${esc(p.id||i+1)}</td><td>${esc(p.category||'—')}</td><td>${esc(p.description||'—')}</td><td>${p.lat}</td><td>${p.lng}</td>`;
+  tr.onclick=()=>{map.setView([p.lat,p.lng],17);m.openPopup()};
+  $('rows').appendChild(tr);
+ });
+ $('n').textContent=points.length.toLocaleString('es-MX');$('cats').textContent=cats.size;
+ if(points.length){bounds=L.latLngBounds(points.map(p=>[+p.lat,+p.lng]));map.fitBounds(bounds.pad(.08))}
+}
+$('load').onclick=()=>{
+ const f=$('file').files[0];if(!f){$('status').textContent='Selecciona primero un JSON.';return}
+ const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);points=Array.isArray(d.interests)?d.interests:[];render();$('status').textContent=`Se cargaron ${points.length} puntos de interés.`}catch(e){$('status').textContent='No se pudo leer el JSON.'}};r.readAsText(f)
+};
+$('fit').onclick=()=>{if(bounds)map.fitBounds(bounds.pad(.08))};
+</script>
+</body></html>
