@@ -1,1 +1,44 @@
-
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recuperación GPS Rutas S23</title>
+<style>
+body{font-family:Arial;margin:0;padding:18px;background:#f4f4f4;color:#222}
+.card{background:#fff;padding:16px;margin-bottom:14px;border-radius:12px;box-shadow:0 2px 8px #0001}
+button{width:100%;padding:14px;margin:8px 0;border:0;border-radius:9px;font-size:16px}
+.blue{background:#1769aa;color:#fff}.green{background:#198754;color:#fff}
+pre{white-space:pre-wrap;word-break:break-word;background:#eee;padding:10px;border-radius:8px}
+.warn{background:#fff3cd;padding:12px;border-radius:8px}
+</style></head><body>
+<div class="card"><h1>🔎 Recuperación GPS Rutas</h1>
+<div class="warn"><b>Modo seguro:</b> solo LEE el almacenamiento. No borra ni modifica rutas.</div>
+<p>Abra esta página en el mismo dominio donde estaban sus rutas.</p>
+<button class="blue" onclick="scan()">1. Buscar datos</button>
+<button class="green" id="bk" onclick="backup()" disabled>2. Guardar copia completa</button></div>
+<div class="card"><h2>Resultado</h2><pre id="out">Buscando...</pre></div>
+<script>
+let found=[];
+function scan(){
+ found=[];let t='Origen: '+location.origin+'\nURL: '+location.href+'\n\n';
+ t+='localStorage: '+localStorage.length+' claves\n\n';
+ for(let i=0;i<localStorage.length;i++){
+  let k=localStorage.key(i),v=localStorage.getItem(k),j=null,info='texto';
+  try{j=JSON.parse(v);info=Array.isArray(j)?'JSON array ('+j.length+')':
+   j&&Array.isArray(j.routes)?'rutas ('+j.routes.length+')':
+   j&&Array.isArray(j.track)?'trayectoria ('+j.track.length+' puntos)':
+   j&&Array.isArray(j.interests)?'intereses ('+j.interests.length+')':'JSON'}catch(e){}
+  found.push({key:k,value:v});t+='• '+k+' | '+v.length+' caracteres | '+info+'\n';
+ }
+ if(!found.length)t+='(No hay claves en localStorage para este origen.)\n';
+ t+='\nsessionStorage: '+sessionStorage.length+' claves';
+ document.getElementById('out').textContent=t;document.getElementById('bk').disabled=!found.length;
+}
+function backup(){
+ let p={herramienta:'Recuperación GPS Rutas S23',version:'1.0',
+ fecha:new Date().toISOString(),origen:location.origin,url:location.href,localStorage:found};
+ let b=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});
+ let a=document.createElement('a');a.href=URL.createObjectURL(b);
+ a.download='RESPALDO_GPS_RUTAS_S23.json';document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(a.href),3000);alert('Respaldo creado. No se modificó el almacenamiento.');
+}
+scan();
+</script></body></html>
