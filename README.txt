@@ -23,3 +23,22 @@ Si no aparecen, usa “♻️ Restaurar respaldo”. La opción permite reemplaz
 URL ESPERADAS
 https://arlelua.github.io/rutas_panecitos/v2/
 https://arlelua.github.io/rutas_panecitos/puntos-interes/
+
+GPS RUTAS V2.3 REPARADA
+
+Causa corregida:
+La V2 antigua leía solamente gps_routes_v2 y esperaba "points".
+Las rutas recuperadas están principalmente en gps_routes_v2_mejorada y usan "track" + "interests".
+
+V2.3:
+- Lee ambas claves.
+- Convierte automáticamente points -> track.
+- Muestra las rutas existentes.
+- Conserva puntos de interés.
+- Permite abrir rutas.
+- Permite respaldo.
+- Permite importar el respaldo del S23.
+- Las nuevas rutas se guardan en gps_routes_v2_mejorada.
+- No borrar ni sustituir V2 hasta probar esta versión.
+
+Subir como carpeta v2_3 o v2.3 y probar antes de reemplazar /v2/.
