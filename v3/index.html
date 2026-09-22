@@ -1,1 +1,75 @@
-
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1769aa"><title>GPS Rutas V3</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#17202a}
+header{background:#1769aa;color:white;padding:14px 16px}main{max-width:1100px;margin:auto;padding:12px}
+.card{background:white;border-radius:14px;padding:13px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+button,input,select{font:inherit}button{border:0;border-radius:9px;padding:11px;margin:3px;background:#e9ecef}
+.primary{background:#1769aa;color:white}.good{background:#198754;color:white}
+.row{display:flex;gap:6px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+select,input{width:100%;padding:10px;border:1px solid #ccd2d8;border-radius:8px}
+#map{height:55vh;min-height:360px;border-radius:12px}.status{padding:9px;background:#eef3f7;border-radius:8px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.stat{padding:9px;background:#eef3f7;text-align:center;border-radius:9px}
+.stat b{display:block;font-size:18px}.list{max-height:280px;overflow:auto}.item{padding:9px;border-bottom:1px solid #eee}
+.small{font-size:12px;color:#667}.ok{background:#e8f5e9}.bad{background:#ffebee}
+@media(max-width:650px){.stats{grid-template-columns:repeat(2,1fr)}#map{height:50vh}}
+</style></head><body>
+<header><b>📍 GPS Rutas V3</b><br><small>Trayectorias · puntos de interés · respaldo y restauración</small></header>
+<main>
+<div class="card"><label>Ruta</label><select id="sel"></select>
+<div class="row"><button class="primary" onclick="show()">Mostrar ruta</button><button onclick="all()">Mostrar todas</button><button onclick="clearMap()">Limpiar</button></div>
+<div id="status" class="status">Cargando...</div></div>
+<div class="card"><div class="stats">
+<div class="stat"><b id="nr">0</b>rutas</div><div class="stat"><b id="nt">0</b>puntos GPS</div>
+<div class="stat"><b id="np">0</b>intereses</div><div class="stat"><b id="nd">0</b>km</div>
+</div></div>
+<div class="card"><div id="map"></div><div class="row">
+<button onclick="mypos()">Mi posición</button><button onclick="show()">Trayectoria + intereses</button>
+</div></div>
+<div class="card"><h3>📥 Restaurar respaldo</h3>
+<p class="small">Acepta el respaldo del S23, un arreglo de rutas o una ruta individual.</p>
+<input id="file" type="file" accept=".json,application/json" onchange="preview(event)">
+<div id="info" class="status" style="display:none"></div>
+<div class="row"><button class="good" id="restore" onclick="restore()" disabled>Restaurar rutas</button>
+<button onclick="backup()">Descargar respaldo actual</button></div></div>
+<div class="card"><h3>📤 Exportar</h3><div class="row">
+<button onclick="jsonout()">JSON</button><button onclick="csvout()">CSV trayectoria</button><button onclick="poiout()">CSV intereses</button>
+</div></div>
+<div class="card"><h3>Rutas almacenadas</h3><div id="list" class="list"></div></div>
+<div class="card"><h3>Puntos de interés</h3><div id="pois" class="list"></div></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const KEY='gps_routes_v2_mejorada',OLD='gps_routes_v2';let routes=[],imp=null;
+let map=L.map('map').setView([17.64,-101.55],11),track=L.layerGroup().addTo(map),poi=L.layerGroup().addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+function read(k){try{let x=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}}
+function norm(r){if(!r||typeof r!='object')return null;return{name:r.name||'Ruta sin nombre',notes:r.notes||'',track:Array.isArray(r.track)?r.track:[],interests:Array.isArray(r.interests)?r.interests:[],distance:Number(r.distance)||dist(r.track||[]),createdAt:r.createdAt||'',updatedAt:r.updatedAt||''}}
+function h(a,b,c,d){let R=6371000,p=Math.PI/180,x=(c-a)*p,y=(d-b)*p,q=Math.sin(x/2)**2+Math.cos(a*p)*Math.cos(c*p)*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(q))}
+function dist(a){let n=0;for(let i=1;i<a.length;i++)n+=h(a[i-1].lat,a[i-1].lng,a[i].lat,a[i].lng);return n}
+function load(){routes=read(KEY).map(norm).filter(Boolean);for(let r of read(OLD).map(norm).filter(Boolean))if(!routes.some(x=>JSON.stringify(x)==JSON.stringify(r)))routes.push(r);render();status('Se encontraron '+routes.length+' rutas. No se modificó el almacenamiento.')}
+function render(){let s=document.getElementById('sel');s.innerHTML='';routes.forEach((r,i)=>{let o=document.createElement('option');o.value=i;o.textContent=(i+1)+'. '+r.name+' — '+r.track.length+' pts';s.appendChild(o)});
+document.getElementById('nr').textContent=routes.length;document.getElementById('nt').textContent=routes.reduce((a,r)=>a+r.track.length,0).toLocaleString();document.getElementById('np').textContent=routes.reduce((a,r)=>a+r.interests.length,0).toLocaleString();document.getElementById('nd').textContent=(routes.reduce((a,r)=>a+r.distance,0)/1000).toFixed(1);
+let l=document.getElementById('list');l.innerHTML='';routes.forEach((r,i)=>l.innerHTML+='<div class="item" onclick="sel.value='+i+';show()"><b>'+(i+1)+'. '+esc(r.name)+'</b><br><span class="small">'+r.track.length.toLocaleString()+' GPS · '+r.interests.length+' intereses · '+(r.distance/1000).toFixed(2)+' km</span></div>')}
+function status(t){document.getElementById('status').textContent=t}
+function clearMap(){track.clearLayers();poi.clearLayers()}
+function show(){let r=routes[+sel.value];if(!r)return;clearMap();let pts=r.track.map(p=>[p.lat,p.lng]).filter(p=>isFinite(p[0]));if(pts.length){L.polyline(pts,{weight:4}).addTo(track);map.fitBounds(L.latLngBounds(pts),{padding:[20,20]})}
+r.interests.forEach((p,i)=>{if(isFinite(p.lat)&&isFinite(p.lng))L.marker([p.lat,p.lng]).addTo(poi).bindPopup('<b>Interés '+(p.id??i+1)+'</b><br>'+esc(p.type||p.category||'Punto')+'<br>'+esc(p.description||''))});
+document.getElementById('pois').innerHTML=r.interests.length?r.interests.map((p,i)=>'<div class="item"><b>'+(p.id??i+1)+'. '+esc(p.type||p.category||'Interés')+'</b><br>'+esc(p.description||'')+'<br><span class="small">'+p.lat+', '+p.lng+'</span></div>').join(''):'Sin puntos de interés';status('Mostrando: '+r.name)}
+function all(){clearMap();let b=[];routes.forEach(r=>{let p=r.track.map(x=>[x.lat,x.lng]).filter(x=>isFinite(x[0]));if(p.length){L.polyline(p,{weight:3}).addTo(track);b.push(...p)}});if(b.length)map.fitBounds(L.latLngBounds(b),{padding:[20,20]});status('Mostrando las '+routes.length+' rutas')}
+function mypos(){navigator.geolocation.getCurrentPosition(p=>{L.marker([p.coords.latitude,p.coords.longitude]).addTo(map).bindPopup('Mi posición').openPopup();map.setView([p.coords.latitude,p.coords.longitude],16)},e=>alert(e.message),{enableHighAccuracy:true})}
+function preview(e){let f=e.target.files[0];if(!f)return;let rd=new FileReader();rd.onload=()=>{try{let x=JSON.parse(rd.result),a=[];if(Array.isArray(x))a=x;else if(Array.isArray(x.routes))a=x.routes;else if(Array.isArray(x.localStorage))for(let z of x.localStorage)try{let q=JSON.parse(z.value);if(Array.isArray(q))a.push(...q)}catch(e){}else if(x.name||x.track)a=[x];imp=a.map(norm).filter(Boolean);info.style.display='block';info.textContent='Archivo leído: '+imp.length+' rutas. Pulsa Restaurar solo si quieres sustituir la colección actual.';restore.disabled=!imp.length}catch(e){info.style.display='block';info.textContent='JSON no válido: '+e.message;restore.disabled=true}};rd.readAsText(f)}
+function restore(){if(!imp?.length)return;if(!confirm('Se reemplazará la colección actual por '+imp.length+' rutas. ¿Ya descargaste un respaldo?'))return;try{localStorage.setItem(KEY,JSON.stringify(imp));routes=imp.slice();render();show();status('Restauración completada: '+routes.length+' rutas')}catch(e){alert('No se pudo guardar: '+e.message)}}
+function save(name,obj,type='application/json'){let b=new Blob([JSON.stringify(obj,null,2)],{type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove()}
+function stamp(){return new Date().toISOString().replaceAll(':','-').replaceAll('.','-')}
+function jsonout(){save('GPS_RUTAS_V3_'+stamp()+'.json',routes)}
+function backup(){save('RESPALDO_GPS_RUTAS_ACTUAL_'+stamp()+'.json',{app:'GPS Rutas V3',exportedAt:new Date().toISOString(),routes})}
+function csv(v){return '"'+String(v??'').replaceAll('"','""')+'"'}
+function csvout(){let a=[['ruta','lat','lng','accuracy','time']];routes.forEach(r=>r.track.forEach(p=>a.push([r.name,p.lat,p.lng,p.accuracy??'',p.time??''])));text('GPS_TRAYECTORIA_'+stamp()+'.csv',a)}
+function poiout(){let a=[['ruta','id','tipo','descripcion','lat','lng','accuracy','time']];routes.forEach(r=>r.interests.forEach((p,i)=>a.push([r.name,p.id??i+1,p.type??p.category??'',p.description??'',p.lat,p.lng,p.accuracy??'',p.time??''])));text('GPS_INTERESES_'+stamp()+'.csv',a)}
+function text(n,a){let b=new Blob(['\ufeff'+a.map(r=>r.map(csv).join(',')).join('\n')],{type:'text/csv;charset=utf-8'}),x=document.createElement('a');x.href=URL.createObjectURL(b);x.download=n;document.body.appendChild(x);x.click();x.remove()}
+function esc(x){return String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
+load();
+</script></body></html>
