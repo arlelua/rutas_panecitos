@@ -1,1 +1,485 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1769aa">
+<title>GPS Rutas V2.5 Campo</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#f4f6f8;color:#17202a}
+#app{height:100%;display:flex;flex-direction:column}
+header{background:#1769aa;color:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+header b{font-size:18px} header small{font-size:11px}
+#map{flex:1;min-height:260px}
+.panel{background:#fff;padding:9px;box-shadow:0 -3px 12px #0002;max-height:56vh;overflow:auto}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}
+input,textarea,select{width:100%;padding:10px;border:1px solid #ccd2d8;border-radius:8px;font:inherit}
+textarea{height:46px;resize:vertical}
+button{border:0;border-radius:9px;padding:11px 8px;font-weight:bold;background:#e7eaed;color:#17202a}
+.primary{background:#1769aa;color:#fff}.green{background:#198754;color:#fff}.orange{background:#e67e22;color:#fff}.danger{background:#c0392b;color:#fff}.dark{background:#34495e;color:#fff}
+.status{padding:8px;border-radius:8px;background:#eef3f7;font-size:12px;margin-bottom:7px}
+.ok{background:#e8f5e9}.warn{background:#fff3cd}.bad{background:#f8d7da}.active{background:#d1ecf1}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:7px}
+.stat{background:#eef3f7;border-radius:8px;padding:7px;text-align:center;font-size:10px}.stat b{display:block;font-size:16px}
+.small{font-size:11px;color:#667}.hidden{display:none!important}
+.list{max-height:210px;overflow:auto}.item{padding:8px;border-bottom:1px solid #e7e7e7;font-size:12px}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;z-index:9999}
+.modalbox{background:white;border-radius:12px;padding:15px;width:min(92%,430px);max-height:88vh;overflow:auto}
+.modalbox h3{margin:0 0 10px}
+.badge{display:inline-block;padding:3px 6px;border-radius:5px;background:#eef3f7;margin:2px;font-size:10px}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+<div><b>📍 GPS Rutas V2.5 Campo</b><br><small>Guardado incremental en IndexedDB</small></div>
+<div id="gpsStatus"><small>GPS: —</small></div>
+</header>
 
+<div id="map"></div>
+
+<div class="panel">
+<div id="message" class="status active">
+Versión de campo independiente. No lee ni modifica las rutas V2/V2.3. Cada punto aceptado se guarda inmediatamente.
+</div>
+
+<div class="row">
+<input id="routeName" value="Ruta nueva" placeholder="Nombre de la ruta">
+<button class="dark" onclick="toggleRoutes()">📂 Rutas V2.5</button>
+</div>
+
+<div class="row">
+<button class="primary" onclick="locate()">📍 Mi posición</button>
+<button class="green" id="recordBtn" onclick="toggleRecording()">▶ Iniciar recorrido</button>
+</div>
+
+<div class="row">
+<button class="orange" onclick="captureInterest()">📌 Punto de interés</button>
+<button onclick="captureManualGPS()">➕ Punto GPS actual</button>
+</div>
+
+<div class="row">
+<select id="minDistance" onchange="savePreferences()">
+<option value="3">Guardar cada 3 m</option>
+<option value="5" selected>Guardar cada 5 m</option>
+<option value="10">Guardar cada 10 m</option>
+<option value="20">Guardar cada 20 m</option>
+</select>
+<button onclick="exportCurrent()">⬇ Ruta actual JSON</button>
+</div>
+
+<div class="row">
+<button onclick="finalizeRoute()">✅ Finalizar ruta</button>
+<button onclick="startNewRoute()">🆕 Nueva ruta</button>
+</div>
+
+<div class="row">
+<button onclick="backupAll()">💾 Respaldo V2.5</button>
+<button onclick="exportCurrentCSV()">📄 Ruta actual CSV</button>
+</div>
+
+<div class="stats">
+<div class="stat"><b id="trackCount">0</b>GPS</div>
+<div class="stat"><b id="interestCount">0</b>Intereses</div>
+<div class="stat"><b id="distanceLabel">0 m</b>Distancia</div>
+<div class="stat"><b id="elapsedLabel">00:00</b>Tiempo</div>
+</div>
+
+<textarea id="notes" placeholder="Observaciones de la ruta"></textarea>
+<div class="small" id="storageInfo">Almacenamiento: verificando…</div>
+<div id="routesPanel" class="list hidden"></div>
+</div>
+</div>
+
+<div id="poiModal" class="modal">
+<div class="modalbox">
+<h3>📌 Punto de interés GPS</h3>
+<div id="poiPosition" class="status"></div>
+<label>Categoría</label>
+<input id="poiCategory" value="Cliente">
+<label>Descripción / nombre</label>
+<textarea id="poiDescription" placeholder="Ej. Miscelánea Lupita"></textarea>
+<div class="row">
+<button onclick="closePoiModal()">Cancelar</button>
+<button class="primary" onclick="saveInterest()">Guardar punto</button>
+</div>
+</div>
+</div>
+
+<div id="recoveryModal" class="modal">
+<div class="modalbox">
+<h3>⚠️ Recorrido pendiente</h3>
+<div id="recoveryText" class="status warn"></div>
+<div class="row">
+<button onclick="finalizeRecovered()">Finalizar</button>
+<button class="green" onclick="continueRecovered()">Continuar</button>
+</div>
+</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+
+const DB_NAME='gps_rutas_v25_db';
+const DB_VERSION=1;
+const PREF_KEY='gps_rutas_v25_preferences';
+let db=null;
+let currentRoute=null;
+let track=[];
+let interests=[];
+let watchId=null;
+let recording=false;
+let pendingPoi=null;
+let lastPosition=null;
+let map=null, trackLine=null, currentMarker=null, accuracyCircle=null, poiLayer=null;
+let wakeLock=null;
+let elapsedTimer=null;
+
+function now(){return new Date().toISOString()}
+function uid(){return 'r25_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)}
+function esc(x){return String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
+function fmtDistance(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(2)+' km'}
+function hav(a,b,c,d){const R=6371000,p=Math.PI/180,x=(c-a)*p,y=(d-b)*p,q=Math.sin(x/2)**2+Math.cos(a*p)*Math.cos(c*p)*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(q))}
+function showMessage(t,kind='active'){const e=document.getElementById('message');e.textContent=t;e.className='status '+kind}
+function setGPS(t){document.getElementById('gpsStatus').innerHTML='<small>'+esc(t)+'</small>'}
+
+function openDB(){
+ return new Promise((resolve,reject)=>{
+   const req=indexedDB.open(DB_NAME,DB_VERSION);
+   req.onupgradeneeded=e=>{
+     const d=e.target.result;
+     if(!d.objectStoreNames.contains('routes')) d.createObjectStore('routes',{keyPath:'id'});
+     if(!d.objectStoreNames.contains('track')){
+       const s=d.createObjectStore('track',{keyPath:'pk',autoIncrement:true});
+       s.createIndex('routeId','routeId',{unique:false});
+     }
+     if(!d.objectStoreNames.contains('interests')){
+       const s=d.createObjectStore('interests',{keyPath:'pk',autoIncrement:true});
+       s.createIndex('routeId','routeId',{unique:false});
+     }
+   };
+   req.onsuccess=()=>{db=req.result;resolve(db)};
+   req.onerror=()=>reject(req.error);
+ });
+}
+function reqPromise(req){return new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
+function txDone(tx){return new Promise((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
+
+async function putRoute(route){
+ const tx=db.transaction('routes','readwrite');
+ tx.objectStore('routes').put(route);
+ await txDone(tx);
+}
+async function addTrackDB(point){
+ const tx=db.transaction('track','readwrite');
+ tx.objectStore('track').add(point);
+ await txDone(tx);
+}
+async function addInterestDB(point){
+ const tx=db.transaction('interests','readwrite');
+ tx.objectStore('interests').add(point);
+ await txDone(tx);
+}
+async function getRoute(id){return reqPromise(db.transaction('routes').objectStore('routes').get(id))}
+async function allRoutes(){return reqPromise(db.transaction('routes').objectStore('routes').getAll())}
+async function byRoute(store,id){
+ return reqPromise(db.transaction(store).objectStore(store).index('routeId').getAll(IDBKeyRange.only(id)));
+}
+async function deleteRouteData(id){
+ const tx=db.transaction(['routes','track','interests'],'readwrite');
+ tx.objectStore('routes').delete(id);
+ for(const store of ['track','interests']){
+   const idx=tx.objectStore(store).index('routeId');
+   const req=idx.openCursor(IDBKeyRange.only(id));
+   req.onsuccess=e=>{const c=e.target.result;if(c){c.delete();c.continue()}};
+ }
+ await txDone(tx);
+}
+
+function initMap(){
+ map=L.map('map').setView([17.64,-101.55],13);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'© OpenStreetMap contributors'}).addTo(map);
+ poiLayer=L.layerGroup().addTo(map);
+}
+function redraw(){
+ if(trackLine){map.removeLayer(trackLine);trackLine=null}
+ poiLayer.clearLayers();
+ if(track.length){
+   trackLine=L.polyline(track.map(p=>[p.lat,p.lng]),{weight:4}).addTo(map);
+ }
+ interests.forEach((p,i)=>{
+   L.marker([p.lat,p.lng]).addTo(poiLayer).bindPopup('<b>'+(i+1)+'. '+esc(p.category||'Interés')+'</b><br>'+esc(p.description||'')+'<br>'+p.lat.toFixed(7)+', '+p.lng.toFixed(7));
+ });
+ updateStats();
+}
+function updateStats(){
+ document.getElementById('trackCount').textContent=track.length.toLocaleString();
+ document.getElementById('interestCount').textContent=interests.length;
+ document.getElementById('distanceLabel').textContent=fmtDistance(currentRoute?.distance||0);
+ updateElapsed();
+}
+function updateElapsed(){
+ let sec=0;
+ if(currentRoute?.startedAt){
+   const end=currentRoute.status==='finished' && currentRoute.finishedAt ? new Date(currentRoute.finishedAt) : new Date();
+   sec=Math.max(0,Math.floor((end-new Date(currentRoute.startedAt))/1000));
+ }
+ const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+ document.getElementById('elapsedLabel').textContent=(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function updateCurrentMarker(pos,center=false){
+ const a=pos.coords.latitude,b=pos.coords.longitude,acc=pos.coords.accuracy;
+ lastPosition={lat:a,lng:b,accuracy:acc,time:now()};
+ if(currentMarker)map.removeLayer(currentMarker);
+ if(accuracyCircle)map.removeLayer(accuracyCircle);
+ currentMarker=L.marker([a,b]).addTo(map).bindPopup('Posición actual');
+ accuracyCircle=L.circle([a,b],{radius:acc,fillOpacity:.08}).addTo(map);
+ if(center)map.setView([a,b],17);
+ setGPS('GPS ±'+Math.round(acc)+' m');
+}
+
+async function ensureRoute(){
+ if(currentRoute)return;
+ currentRoute={id:uid(),name:document.getElementById('routeName').value.trim()||'Ruta nueva',notes:document.getElementById('notes').value||'',status:'active',startedAt:now(),createdAt:now(),updatedAt:now(),finishedAt:null,distance:0,trackCount:0,interestCount:0};
+ track=[];interests=[];
+ await putRoute(currentRoute);
+ showMessage('Ruta creada y protegida. Cada punto se guardará inmediatamente.','ok');
+}
+async function saveMeta(){
+ if(!currentRoute)return;
+ currentRoute.name=document.getElementById('routeName').value.trim()||'Ruta nueva';
+ currentRoute.notes=document.getElementById('notes').value||'';
+ currentRoute.updatedAt=now();
+ currentRoute.trackCount=track.length;
+ currentRoute.interestCount=interests.length;
+ await putRoute(currentRoute);
+}
+async function acceptPoint(lat,lng,accuracy,type='Recorrido'){
+ await ensureRoute();
+ if(!isFinite(lat)||!isFinite(lng))return false;
+ if(isFinite(accuracy) && accuracy>120){
+   showMessage('GPS demasiado impreciso (±'+Math.round(accuracy)+' m). Punto omitido.','warn');
+   return false;
+ }
+ const minD=Number(document.getElementById('minDistance').value||5);
+ const last=track.at(-1);
+ if(last){
+   const step=hav(last.lat,last.lng,lat,lng);
+   if(step<minD)return false;
+   currentRoute.distance=(currentRoute.distance||0)+step;
+ }
+ const p={routeId:currentRoute.id,seq:track.length+1,lat,lng,accuracy:Number(accuracy)||null,time:now(),type};
+ await addTrackDB(p);
+ track.push(p);
+ currentRoute.trackCount=track.length;
+ currentRoute.updatedAt=p.time;
+ await putRoute(currentRoute);
+ if(trackLine)trackLine.addLatLng([lat,lng]); else trackLine=L.polyline([[lat,lng]],{weight:4}).addTo(map);
+ updateStats();
+ return true;
+}
+
+function locate(){
+ navigator.geolocation.getCurrentPosition(p=>updateCurrentMarker(p,true),e=>showMessage('GPS: '+e.message,'bad'),{enableHighAccuracy:true,timeout:20000,maximumAge:1000});
+}
+async function toggleRecording(){
+ if(recording){stopRecording();showMessage('Grabación detenida. Los puntos ya registrados permanecen guardados.','ok');return}
+ await ensureRoute();
+ await requestPersistence();
+ recording=true;
+ document.getElementById('recordBtn').textContent='⏹ Detener recorrido';
+ showMessage('Grabando. Cada punto aceptado se guarda inmediatamente en el teléfono.','ok');
+ await requestWakeLock();
+ watchId=navigator.geolocation.watchPosition(async p=>{
+   updateCurrentMarker(p,false);
+   try{await acceptPoint(p.coords.latitude,p.coords.longitude,p.coords.accuracy,'Recorrido')}
+   catch(err){showMessage('Error al guardar punto: '+err.message,'bad')}
+ },e=>showMessage('Seguimiento GPS: '+e.message,'bad'),{enableHighAccuracy:true,timeout:25000,maximumAge:1000});
+ startElapsedTimer();
+}
+function stopRecording(){
+ if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+ recording=false;
+ document.getElementById('recordBtn').textContent='▶ Iniciar recorrido';
+ releaseWakeLock();
+}
+function captureManualGPS(){
+ navigator.geolocation.getCurrentPosition(async p=>{
+   updateCurrentMarker(p,true);
+   try{
+     const ok=await acceptPoint(p.coords.latitude,p.coords.longitude,p.coords.accuracy,'GPS manual');
+     showMessage(ok?'Punto GPS guardado inmediatamente.':'Punto demasiado cercano al anterior; no se duplicó.',ok?'ok':'warn');
+   }catch(err){showMessage('No se pudo guardar: '+err.message,'bad')}
+ },e=>showMessage('GPS: '+e.message,'bad'),{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+}
+function captureInterest(){
+ navigator.geolocation.getCurrentPosition(p=>{
+   updateCurrentMarker(p,true);
+   pendingPoi={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy,time:now()};
+   document.getElementById('poiPosition').textContent='Posición actual: '+pendingPoi.lat.toFixed(7)+', '+pendingPoi.lng.toFixed(7)+' · precisión ±'+Math.round(pendingPoi.accuracy)+' m';
+   document.getElementById('poiCategory').value='Cliente';
+   document.getElementById('poiDescription').value='';
+   document.getElementById('poiModal').style.display='flex';
+ },e=>showMessage('No se pudo obtener el GPS del punto de interés: '+e.message,'bad'),{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+}
+async function saveInterest(){
+ if(!pendingPoi)return;
+ await ensureRoute();
+ const p={routeId:currentRoute.id,seq:interests.length+1,...pendingPoi,category:document.getElementById('poiCategory').value.trim()||'Interés',description:document.getElementById('poiDescription').value.trim()};
+ try{
+   await addInterestDB(p);
+   interests.push(p);
+   currentRoute.interestCount=interests.length;
+   currentRoute.updatedAt=now();
+   await putRoute(currentRoute);
+   L.marker([p.lat,p.lng]).addTo(poiLayer).bindPopup('<b>'+esc(p.category)+'</b><br>'+esc(p.description));
+   updateStats();
+   closePoiModal();
+   showMessage('Punto de interés guardado en la posición GPS actual.','ok');
+ }catch(err){showMessage('Error al guardar punto de interés: '+err.message,'bad')}
+}
+function closePoiModal(){document.getElementById('poiModal').style.display='none';pendingPoi=null}
+
+async function finalizeRoute(){
+ if(!currentRoute){showMessage('No hay una ruta activa para finalizar.','warn');return}
+ stopRecording();
+ await saveMeta();
+ currentRoute.status='finished';currentRoute.finishedAt=now();currentRoute.updatedAt=currentRoute.finishedAt;
+ await putRoute(currentRoute);
+ showMessage('Ruta finalizada y guardada. Puedes descargar el respaldo o iniciar otra ruta.','ok');
+ updateStats();
+}
+async function startNewRoute(){
+ if(currentRoute && currentRoute.status==='active' && (track.length||interests.length)){
+   if(!confirm('La ruta actual está activa. ¿Finalizarla antes de iniciar una nueva?'))return;
+   await finalizeRoute();
+ }
+ stopRecording();
+ currentRoute=null;track=[];interests=[];redraw();
+ document.getElementById('routeName').value='Ruta nueva';
+ document.getElementById('notes').value='';
+ showMessage('Lista para una nueva ruta.','active');
+}
+async function loadRoute(id){
+ stopRecording();
+ const r=await getRoute(id);if(!r)return;
+ currentRoute=r;
+ track=await byRoute('track',id);
+ interests=await byRoute('interests',id);
+ track.sort((x,y)=>(x.seq||0)-(y.seq||0));
+ interests.sort((x,y)=>(x.seq||0)-(y.seq||0));
+ document.getElementById('routeName').value=r.name||'Ruta';
+ document.getElementById('notes').value=r.notes||'';
+ redraw();
+ if(track.length)map.fitBounds(track.map(p=>[p.lat,p.lng]),{padding:[20,20]});
+ showMessage(r.status==='active'?'Ruta pendiente cargada. Puedes continuarla.':'Ruta finalizada cargada en consulta.','ok');
+ document.getElementById('routesPanel').classList.add('hidden');
+}
+async function toggleRoutes(){
+ const box=document.getElementById('routesPanel');
+ box.classList.toggle('hidden');
+ if(!box.classList.contains('hidden'))await renderRoutes();
+}
+async function renderRoutes(){
+ const rs=await allRoutes();rs.sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+ const box=document.getElementById('routesPanel');
+ box.innerHTML=rs.length?rs.map(r=>'<div class="item"><b>'+esc(r.name)+'</b> '+(r.status==='active'?'⚠️ ACTIVA':'✅')+'<br><span class="small">'+(r.trackCount||0).toLocaleString()+' GPS · '+(r.interestCount||0)+' intereses · '+fmtDistance(r.distance||0)+'</span><br><button onclick="loadRoute(\''+r.id+'\')">Abrir</button> <button onclick="exportRouteById(\''+r.id+'\')">JSON</button></div>').join(''):'No hay rutas V2.5 todavía.';
+}
+
+async function routeBundle(id){
+ const r=await getRoute(id);if(!r)throw new Error('Ruta no encontrada');
+ const t=await byRoute('track',id), i=await byRoute('interests',id);
+ t.sort((a,b)=>(a.seq||0)-(b.seq||0)); i.sort((a,b)=>(a.seq||0)-(b.seq||0));
+ return {...r,track:t.map(cleanDbKey),interests:i.map(cleanDbKey)};
+}
+function cleanDbKey(x){const y={...x};delete y.pk;return y}
+async function exportRouteById(id){downloadJSON('RUTA_'+safe((await getRoute(id)).name)+'.json',await routeBundle(id))}
+async function exportCurrent(){
+ if(!currentRoute){showMessage('No hay ruta actual.','warn');return}
+ await saveMeta();downloadJSON('RUTA_'+safe(currentRoute.name)+'_EN_CURSO.json',await routeBundle(currentRoute.id));
+}
+async function exportCurrentCSV(){
+ if(!currentRoute){showMessage('No hay ruta actual.','warn');return}
+ await saveMeta();
+ const r=await routeBundle(currentRoute.id);
+ const rows=[['tipo','orden','nombre','latitud','longitud','precision_m','fecha_hora','categoria','descripcion']];
+ r.track.forEach((p,n)=>rows.push(['trayectoria',n+1,'',p.lat,p.lng,p.accuracy??'',p.time,'','']));
+ r.interests.forEach((p,n)=>rows.push(['interes',n+1,p.description||'',p.lat,p.lng,p.accuracy??'',p.time,p.category||'','']));
+ downloadText('RUTA_'+safe(r.name)+'.csv',rows.map(row=>row.map(csvCell).join(',')).join('\n'),'text/csv;charset=utf-8');
+}
+function csvCell(v){v=String(v??'');return /[",\n]/.test(v)?'"'+v.replaceAll('"','""')+'"':v}
+async function backupAll(){
+ const rs=await allRoutes(), out=[];
+ for(const r of rs)out.push(await routeBundle(r.id));
+ downloadJSON('RESPALDO_GPS_RUTAS_V2_5_'+new Date().toISOString().slice(0,10)+'.json',{app:'GPS Rutas V2.5 Campo',version:'2.5',exportedAt:now(),routes:out});
+}
+function downloadJSON(name,obj){downloadText(name,JSON.stringify(obj,null,2),'application/json')}
+function downloadText(name,text,type){const b=new Blob([text],{type}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
+function safe(x){return String(x||'Ruta').replace(/[^a-z0-9áéíóúñ _-]/gi,'_')}
+
+async function detectRecovery(){
+ const rs=await allRoutes();
+ const active=rs.filter(r=>r.status==='active').sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+ if(!active.length)return;
+ const r=active[0],t=await byRoute('track',r.id),i=await byRoute('interests',r.id);
+ document.getElementById('recoveryText').innerHTML='<b>'+esc(r.name)+'</b><br>GPS: '+t.length+' · Intereses: '+i.length+' · Distancia: '+fmtDistance(r.distance||0)+'<br>Último guardado: '+esc(r.updatedAt||'');
+ document.getElementById('recoveryModal').dataset.routeId=r.id;
+ document.getElementById('recoveryModal').style.display='flex';
+}
+async function continueRecovered(){
+ const id=document.getElementById('recoveryModal').dataset.routeId;
+ document.getElementById('recoveryModal').style.display='none';
+ await loadRoute(id);
+ showMessage('Recorrido recuperado. Pulsa "Iniciar recorrido" para continuar capturando GPS.','ok');
+}
+async function finalizeRecovered(){
+ const id=document.getElementById('recoveryModal').dataset.routeId;
+ const r=await getRoute(id);if(r){r.status='finished';r.finishedAt=now();r.updatedAt=r.finishedAt;await putRoute(r)}
+ document.getElementById('recoveryModal').style.display='none';
+ currentRoute=null;track=[];interests=[];redraw();
+ showMessage('Recorrido pendiente finalizado sin borrar ninguno de sus puntos.','ok');
+}
+
+async function requestPersistence(){
+ try{if(navigator.storage?.persist)await navigator.storage.persist()}catch(e){}
+ updateStorageInfo();
+}
+async function updateStorageInfo(){
+ try{
+   const est=await navigator.storage.estimate();
+   const used=est.usage||0, quota=est.quota||0;
+   document.getElementById('storageInfo').textContent='Almacenamiento V2.5: '+(used/1048576).toFixed(1)+' MB usados de '+(quota/1048576).toFixed(0)+' MB disponibles aprox.';
+ }catch(e){document.getElementById('storageInfo').textContent='Almacenamiento V2.5: IndexedDB activo.'}
+}
+async function requestWakeLock(){
+ try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen')}catch(e){}
+}
+async function releaseWakeLock(){try{if(wakeLock){await wakeLock.release();wakeLock=null}}catch(e){}}
+document.addEventListener('visibilitychange',async()=>{if(document.visibilityState==='visible'&&recording)await requestWakeLock()});
+
+function savePreferences(){localStorage.setItem(PREF_KEY,JSON.stringify({minDistance:document.getElementById('minDistance').value}))}
+function loadPreferences(){try{const p=JSON.parse(localStorage.getItem(PREF_KEY)||'{}');if(p.minDistance)document.getElementById('minDistance').value=p.minDistance}catch(e){}}
+function startElapsedTimer(){if(elapsedTimer)clearInterval(elapsedTimer);elapsedTimer=setInterval(updateElapsed,1000)}
+
+document.getElementById('routeName').addEventListener('change',()=>saveMeta().catch(()=>{}));
+document.getElementById('notes').addEventListener('change',()=>saveMeta().catch(()=>{}));
+window.addEventListener('pagehide',()=>{stopRecording()});
+
+(async function init(){
+ initMap();loadPreferences();startElapsedTimer();
+ try{
+   await openDB();
+   await updateStorageInfo();
+   await detectRecovery();
+   showMessage('V2.5 lista. Los nuevos recorridos se guardarán punto por punto en IndexedDB.','ok');
+ }catch(err){
+   showMessage('No se pudo abrir el almacenamiento seguro: '+err.message,'bad');
+ }
+})();
+</script>
+</body>
+</html>
