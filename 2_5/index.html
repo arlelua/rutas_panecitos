@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1769aa">
-<title>GPS Rutas V2.5 Campo</title>
+<title>GPS Rutas V2.5.1 Campo</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -35,7 +35,7 @@ button{border:0;border-radius:9px;padding:11px 8px;font-weight:bold;background:#
 <body>
 <div id="app">
 <header>
-<div><b>📍 GPS Rutas V2.5 Campo</b><br><small>Guardado incremental en IndexedDB</small></div>
+<div><b>📍 GPS Rutas V2.5.1 Campo</b><br><small>Guardado incremental en IndexedDB</small></div>
 <div id="gpsStatus"><small>GPS: —</small></div>
 </header>
 
@@ -43,7 +43,7 @@ button{border:0;border-radius:9px;padding:11px 8px;font-weight:bold;background:#
 
 <div class="panel">
 <div id="message" class="status active">
-Versión de campo independiente. No lee ni modifica las rutas V2/V2.3. Cada punto aceptado se guarda inmediatamente.
+Versión V2.5.1 corregida e independiente. No lee ni modifica las rutas V2/V2.3. Cada punto aceptado se guarda inmediatamente.
 </div>
 
 <div class="row">
@@ -243,9 +243,10 @@ function updateCurrentMarker(pos,center=false){
 }
 
 async function ensureRoute(){
- if(currentRoute)return;
+ if(currentRoute && currentRoute.status==='active')return;
  currentRoute={id:uid(),name:document.getElementById('routeName').value.trim()||'Ruta nueva',notes:document.getElementById('notes').value||'',status:'active',startedAt:now(),createdAt:now(),updatedAt:now(),finishedAt:null,distance:0,trackCount:0,interestCount:0};
  track=[];interests=[];
+ redraw();
  await putRoute(currentRoute);
  showMessage('Ruta creada y protegida. Cada punto se guardará inmediatamente.','ok');
 }
@@ -350,19 +351,27 @@ async function finalizeRoute(){
  await saveMeta();
  currentRoute.status='finished';currentRoute.finishedAt=now();currentRoute.updatedAt=currentRoute.finishedAt;
  await putRoute(currentRoute);
- showMessage('Ruta finalizada y guardada. Puedes descargar el respaldo o iniciar otra ruta.','ok');
+ const finishedName=currentRoute.name;
+ showMessage('Ruta finalizada y guardada: '+finishedName+'. Para seguir capturando se creará una ruta nueva.','ok');
  updateStats();
+ currentRoute=null;
 }
 async function startNewRoute(){
- if(currentRoute && currentRoute.status==='active' && (track.length||interests.length)){
-   if(!confirm('La ruta actual está activa. ¿Finalizarla antes de iniciar una nueva?'))return;
-   await finalizeRoute();
- }
  stopRecording();
- currentRoute=null;track=[];interests=[];redraw();
+ if(currentRoute && currentRoute.status==='active'){
+   if(track.length||interests.length){
+     if(!confirm('La ruta actual está activa. ¿Finalizarla antes de iniciar una nueva?'))return;
+     await finalizeRoute();
+   }else{
+     await deleteRouteData(currentRoute.id);
+     currentRoute=null;
+   }
+ }
+ track=[];interests=[];redraw();
  document.getElementById('routeName').value='Ruta nueva';
  document.getElementById('notes').value='';
  showMessage('Lista para una nueva ruta.','active');
+ await renderRoutes();
 }
 async function loadRoute(id){
  stopRecording();
@@ -387,7 +396,21 @@ async function toggleRoutes(){
 async function renderRoutes(){
  const rs=await allRoutes();rs.sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
  const box=document.getElementById('routesPanel');
- box.innerHTML=rs.length?rs.map(r=>'<div class="item"><b>'+esc(r.name)+'</b> '+(r.status==='active'?'⚠️ ACTIVA':'✅')+'<br><span class="small">'+(r.trackCount||0).toLocaleString()+' GPS · '+(r.interestCount||0)+' intereses · '+fmtDistance(r.distance||0)+'</span><br><button onclick="loadRoute(\''+r.id+'\')">Abrir</button> <button onclick="exportRouteById(\''+r.id+'\')">JSON</button></div>').join(''):'No hay rutas V2.5 todavía.';
+ box.innerHTML=rs.length?rs.map(r=>'<div class="item"><b>'+esc(r.name)+'</b> '+(r.status==='active'?'⚠️ ACTIVA':'✅')+'<br><span class="small">'+(r.trackCount||0).toLocaleString()+' GPS · '+(r.interestCount||0)+' intereses · '+fmtDistance(r.distance||0)+'</span><br><button onclick="loadRoute(\''+r.id+'\')">Abrir</button> <button onclick="exportRouteById(\''+r.id+'\')">JSON</button> <button class="danger" onclick="deleteRouteUI(\''+r.id+'\')">Eliminar</button></div>').join(''):'No hay rutas V2.5 todavía.';
+}
+
+async function deleteRouteUI(id){
+ const r=await getRoute(id);
+ if(!r)return;
+ const msg='¿Eliminar definitivamente la ruta "'+(r.name||'Ruta')+'"?\n\nEsta acción borra sus puntos GPS e intereses de V2.5.';
+ if(!confirm(msg))return;
+ if(currentRoute && currentRoute.id===id){
+   stopRecording();
+   currentRoute=null;track=[];interests=[];redraw();
+ }
+ await deleteRouteData(id);
+ await renderRoutes();
+ showMessage('Ruta eliminada de V2.5.','ok');
 }
 
 async function routeBundle(id){
@@ -415,7 +438,7 @@ function csvCell(v){v=String(v??'');return /[",\n]/.test(v)?'"'+v.replaceAll('"'
 async function backupAll(){
  const rs=await allRoutes(), out=[];
  for(const r of rs)out.push(await routeBundle(r.id));
- downloadJSON('RESPALDO_GPS_RUTAS_V2_5_'+new Date().toISOString().slice(0,10)+'.json',{app:'GPS Rutas V2.5 Campo',version:'2.5',exportedAt:now(),routes:out});
+ downloadJSON('RESPALDO_GPS_RUTAS_V2_5_'+new Date().toISOString().slice(0,10)+'.json',{app:'GPS Rutas V2.5.1 Campo',version:'2.5',exportedAt:now(),routes:out});
 }
 function downloadJSON(name,obj){downloadText(name,JSON.stringify(obj,null,2),'application/json')}
 function downloadText(name,text,type){const b=new Blob([text],{type}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
@@ -424,8 +447,17 @@ function safe(x){return String(x||'Ruta').replace(/[^a-z0-9áéíóúñ _-]/gi,'
 async function detectRecovery(){
  const rs=await allRoutes();
  const active=rs.filter(r=>r.status==='active').sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
- if(!active.length)return;
- const r=active[0],t=await byRoute('track',r.id),i=await byRoute('interests',r.id);
+ const valid=[];
+ for(const r of active){
+   const t=await byRoute('track',r.id),i=await byRoute('interests',r.id);
+   if(!t.length && !i.length){
+     await deleteRouteData(r.id);
+     continue;
+   }
+   valid.push({r,t,i});
+ }
+ if(!valid.length)return;
+ const {r,t,i}=valid[0];
  document.getElementById('recoveryText').innerHTML='<b>'+esc(r.name)+'</b><br>GPS: '+t.length+' · Intereses: '+i.length+' · Distancia: '+fmtDistance(r.distance||0)+'<br>Último guardado: '+esc(r.updatedAt||'');
  document.getElementById('recoveryModal').dataset.routeId=r.id;
  document.getElementById('recoveryModal').style.display='flex';
